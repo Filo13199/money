@@ -37,8 +37,11 @@ func Add(m, m1 primitive.Decimal128) (primitive.Decimal128, error) {
 		val, _ := primitive.ParseDecimal128FromBigInt(bgRes, e)
 		return val, nil
 	}
-	factor := math.Pow10(e - e1)
-	c = c.Mul(c, big.NewInt(int64(factor)))
+
+	// based on trial, any number greater than 10^30, will result in overflow in big.Int type,
+	// int64 can represent up to 10^18 without overflow
+	factor := bigIntPow10(e - e1)
+	c = c.Mul(c, factor)
 	bgRes := c.Add(c, c1)
 	val, _ := primitive.ParseDecimal128FromBigInt(bgRes, e1)
 	return val, nil
@@ -63,14 +66,17 @@ func Sub(m, m1 primitive.Decimal128) (primitive.Decimal128, error) {
 		val, _ := primitive.ParseDecimal128FromBigInt(bgRes, e)
 		return val, nil
 	} else if e < e1 {
-		factor := math.Pow10(e1 - e)
-		c1 = c1.Mul(c1, big.NewInt(int64(factor)))
+		factor := bigIntPow10(e1 - e)
+
+		c1 = c1.Mul(c1, factor)
 		bgRes := c1.Add(c1, c)
 		val, _ := primitive.ParseDecimal128FromBigInt(bgRes, e)
 		return val, nil
 	}
-	factor := math.Pow10(e - e1)
-	c = c.Mul(c, big.NewInt(int64(factor)))
+
+	factor := bigIntPow10(e - e1)
+
+	c = c.Mul(c, factor)
 	bgRes := c.Add(c, c1)
 	val, _ := primitive.ParseDecimal128FromBigInt(bgRes, e1)
 	return val, nil
@@ -100,10 +106,14 @@ func SystemRound(roundTo primitive.Decimal128, roundDir string, val primitive.De
 	c, e, _ := val.BigInt()
 	rtc, rte, _ := roundTo.BigInt()
 	if e > rte {
-		c = c.Mul(c, big.NewInt(int64(math.Pow10(e-rte))))
+		factor := bigIntPow10(e - rte)
+		c = c.Mul(c, factor)
 		e = rte
 	}
-	rtc = rtc.Mul(rtc, big.NewInt(int64(math.Pow10(rte-e))))
+
+	factor := bigIntPow10(rte - e)
+
+	rtc = rtc.Mul(rtc, factor)
 	rem := new(big.Int).Set(c).Mod(c, rtc)
 	roundedVal := c
 	if rem.Cmp(big.NewInt(0)) != 0 {
@@ -161,17 +171,20 @@ func Compare(x, y primitive.Decimal128) (int, error) {
 	// 6305234/10*(+4) => 630,5234
 
 	if xe > 0 {
-		xquo.Mul(xquo, big.NewInt(int64(math.Pow10(xe))))
+		factor := bigIntPow10(xe)
+		xquo.Mul(xquo, factor)
 	} else {
-		d := big.NewInt(int64(math.Pow10(-xe)))
-		xquo, xrem = new(big.Int).DivMod(xc, d, new(big.Int))
+		factor := bigIntPow10(-xe)
+		xquo, xrem = new(big.Int).DivMod(xc, factor, new(big.Int))
 	}
 
 	if ye > 0 {
-		yquo.Mul(yquo, big.NewInt(int64(math.Pow10(ye))))
+		factor := bigIntPow10(ye)
+
+		yquo.Mul(yquo, factor)
 	} else {
-		d1 := big.NewInt(int64(math.Pow10(-ye)))
-		yquo, yrem = new(big.Int).DivMod(yc, d1, new(big.Int))
+		factor := bigIntPow10(-ye)
+		yquo, yrem = new(big.Int).DivMod(yc, factor, new(big.Int))
 	}
 
 	// 630.5230005 => 6305230005, -7
@@ -179,10 +192,13 @@ func Compare(x, y primitive.Decimal128) (int, error) {
 
 	if xe < ye {
 		eDiff := ye - xe
-		yrem = new(big.Int).Mul(yrem, big.NewInt(int64(math.Pow10(eDiff))))
+		factor := bigIntPow10(eDiff)
+
+		yrem = new(big.Int).Mul(yrem, factor)
 	} else if ye < xe {
 		eDiff := xe - ye
-		xrem.Mul(xrem, big.NewInt(int64(math.Pow10(eDiff))))
+		factor := bigIntPow10(eDiff)
+		xrem.Mul(xrem, factor)
 	}
 
 	cmpRes := 0
@@ -206,4 +222,8 @@ func Compare(x, y primitive.Decimal128) (int, error) {
 	}
 
 	return cmpRes, nil
+}
+
+func bigIntPow10(power int) *big.Int {
+	return new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(power)), big.NewInt(0))
 }
